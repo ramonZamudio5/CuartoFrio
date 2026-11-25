@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monitor Cuarto Frío - ESP32</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Sistema Empotrado: Cuarto Frío</h1>
+      <div class="timestamp">Último sensado: <span id="fecha_hora">--</span></div>
+    </header>
+
+    <div class="grid">
+      <!-- Lectura de Sensores -->
+      <div class="card">
+        <h2>Sensores (Última Lectura)</h2>
+        <div class="item">
+          <span>Temperatura:</span>
+          <strong id="temperatura">-- °C</strong>
+        </div>
+        <div class="item">
+          <span>Nivel Luz (LDR):</span>
+          <strong id="lectura_ldr">--</strong>
+        </div>
+        <div class="item">
+          <span>Estado Puerta:</span>
+          <span id="puerta" class="badge badge-on">--</span>
+        </div>
+        <div class="item">
+          <span>Sensor Movimiento (PIR):</span>
+          <span id="movimiento" class="badge badge-off">--</span>
+        </div>
+      </div>
+
+      <!-- Estado de Actuadores -->
+      <div class="card">
+        <h2>Actuadores en Operación</h2>
+        <div class="item">
+          <span>Ventilador (5V):</span>
+          <span id="ventilador" class="badge badge-off">--</span>
+        </div>
+        <div class="item">
+          <span>Luz Interior (Relé):</span>
+          <span id="luz" class="badge badge-off">--</span>
+        </div>
+        <div class="item">
+          <span>Display Local:</span>
+          <span class="badge badge-on">LCD 16x2 ACTIVO</span>
+        </div>
+      </div>
+
+      <!-- Parámetros Configurables -->
+      <div class="card">
+        <h2>Parámetros Configurables</h2>
+        <form id="formConfig">
+          <div class="form-group">
+            <label for="temp_objetivo">Temperatura Objetivo (°C):</label>
+            <input type="number" step="0.5" id="temp_objetivo" required>
+          </div>
+          <div class="form-group">
+            <label for="umbral_luz_puerta">Umbral Luz Puerta (0 - 4095):</label>
+            <input type="number" min="0" max="4095" id="umbral_luz_puerta" required>
+          </div>
+          <div class="form-group">
+            <label for="tiempo_luz_seg">Tiempo Apagado Luz (seg):</label>
+            <input type="number" min="1" max="600" id="tiempo_luz_seg" required>
+          </div>
+          <button type="submit">Actualizar Parámetros</button>
+          <div id="msg"></div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let camposCargados = false;
+
+    async function cargarEstado() {
+      try {
+        const res = await fetch('/api/estado');
+        const data = await res.json();
+
+        document.getElementById('fecha_hora').textContent = data.fecha_hora;
+        document.getElementById('temperatura').textContent = data.sensores.temperatura.toFixed(1) + ' °C';
+        document.getElementById('lectura_ldr').textContent = data.sensores.lectura_ldr;
+
+        const elPuerta = document.getElementById('puerta');
+        elPuerta.textContent = data.sensores.puerta_abierta ? 'ABIERTA' : 'CERRADA';
+        elPuerta.className = 'badge ' + (data.sensores.puerta_abierta ? 'badge-alert' : 'badge-on');
+
+        const elMov = document.getElementById('movimiento');
+        elMov.textContent = data.sensores.movimiento ? 'DETECTADO' : 'SIN MOVIMIENTO';
+        elMov.className = 'badge ' + (data.sensores.movimiento ? 'badge-on' : 'badge-off');
+
+        const elFan = document.getElementById('ventilador');
+        elFan.textContent = data.actuadores.ventilador ? 'ENCENDIDO' : 'APAGADO';
+        elFan.className = 'badge ' + (data.actuadores.ventilador ? 'badge-on' : 'badge-off');
+
+        const elLuz = document.getElementById('luz');
+        elLuz.textContent = data.actuadores.luz ? 'ENCENDIDA' : 'APAGADA';
+        elLuz.className = 'badge ' + (data.actuadores.luz ? 'badge-on' : 'badge-off');
+
+        if (!camposCargados) {
+          document.getElementById('temp_objetivo').value = data.parametros.temp_objetivo;
+          document.getElementById('umbral_luz_puerta').value = data.parametros.umbral_luz_puerta;
+          document.getElementById('tiempo_luz_seg').value = data.parametros.tiempo_luz_seg;
+          camposCargados = true;
+        }
+      } catch (e) {
+        console.error('Error al consultar API:', e);
+      }
+    }
+
+    document.getElementById('formConfig').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        temp_objetivo: parseFloat(document.getElementById('temp_objetivo').value),
+        umbral_luz_puerta: parseInt(document.getElementById('umbral_luz_puerta').value, 10),
+        tiempo_luz_seg: parseInt(document.getElementById('tiempo_luz_seg').value, 10)
+      };
+
+      try {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          document.getElementById('msg').textContent = 'Parámetros actualizados correctamente.';
+          camposCargados = false;
+          cargarEstado();
+        }
+      } catch (err) {
+        document.getElementById('msg').textContent = 'Error al enviar configuración.';
+      }
+    });
+
+    cargarEstado();
+    setInterval(cargarEstado, 1500);
+  </script>
+</body>
+</html>
